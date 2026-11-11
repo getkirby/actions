@@ -1,0 +1,39 @@
+name: apt
+description: Installs system packages with apt, cached by their resolved versions
+
+inputs:
+  packages:
+    description: Packages, e.g. "imagemagick locales-all"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # the runner's apt mirror often takes minutes to serve packages,
+    # so they are cached by the exact versions apt resolves for them
+    - name: Resolve the packages
+      id: resolve
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        sudo apt-get update
+        resolved=$(apt-get install -s --no-install-recommends $PACKAGES | grep '^Inst' || true)
+        echo "$resolved"
+        echo "key=$(sha1sum <<< "$resolved" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache the packages
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/apt/*.deb
+        key: apt-${{ runner.os }}-${{ steps.resolve.outputs.key }}
+
+    - name: Install the packages
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        mkdir -p ~/apt/partial
+        sudo apt-get install -y --no-install-recommends \
+          -o Acquire::Retries=3 -o Dir::Cache::Archives="$HOME/apt" \
+          $PACKAGES

@@ -1,0 +1,23 @@
+name: Checkout
+description: Checks out the repository with its last two commits and without keeping the token
+
+inputs:
+  ref:
+    description: Branch, tag or commit, defaults to the one that triggered the workflow
+    default: ""
+  persist-credentials:
+    description: Keep the token in the git config, for jobs that push
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # Codecov finds the commit of a pull request through the parents of its
+    # merge commit, hence the depth; persisted credentials would leave the
+    # token in .git/config for every later step
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.ref }}
+        fetch-depth: 2
+        persist-credentials: ${{ inputs.persist-credentials }}

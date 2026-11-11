@@ -1,0 +1,19 @@
+version: 2
+
+updates:
+  # every repository that uses these actions picks up
+  # the bumped versions with its next update of them
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /*
+    schedule:
+      interval: quarterly
+    cooldown:
+      default-days: 14
+    commit-message:
+      prefix: chore
+    groups:
+      actions:
+        patterns:
+          - "*"

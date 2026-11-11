@@ -1,0 +1,23 @@
+name: Composer
+description: Checks composer.json and the dependencies with the `analyze:composer` script
+
+runs:
+  using: composite
+  steps:
+    - name: Find composer-normalize
+      id: normalize
+      shell: bash
+      run: echo "installed=$(command -v composer-normalize > /dev/null && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+    - name: Check composer.json and the dependencies
+      shell: bash
+      run: composer run analyze:composer
+
+    # composer-normalize has no binary that cpx could run,
+    # so it comes from the `tools` input of the php action
+    - name: Ensure that composer.json is normalized
+      if: ${{ !cancelled() && steps.normalize.outputs.installed == 'true' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ""
+      run: composer-normalize --dry-run

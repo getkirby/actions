@@ -1,0 +1,63 @@
+name: PHPUnit
+description: Runs the tests with the `test` script and uploads their coverage
+
+inputs:
+  args:
+    description: Arguments for the test script, e.g. "--processes 4"
+    default: ""
+  codecov-token:
+    description: Codecov token, uploads the coverage if the php action set up a coverage driver
+    default: ""
+  codecov-flags:
+    description: Codecov flags, e.g. "backend"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Find the PHP version and coverage driver
+      id: php
+      shell: bash
+      run: |
+        echo "version=$(php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;')" >> "$GITHUB_OUTPUT"
+        echo "coverage=$(php -r 'echo extension_loaded("pcov") || str_contains((string)ini_get("xdebug.mode"), "coverage") ? "true" : "false";')" >> "$GITHUB_OUTPUT"
+
+    - name: Check Composer platform requirements
+      shell: bash
+      run: composer check-platform-reqs
+
+    # created upfront, so that saving the cache doesn't warn
+    # when the PHPUnit configuration has no cache directory
+    - name: Ensure that the PHPUnit cache dir exists
+      shell: bash
+      run: mkdir -p .phpunit.cache
+
+    - name: Cache PHPUnit results
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .phpunit.cache
+        key: phpunit-${{ runner.os }}-php${{ steps.php.outputs.version }}-${{ hashFiles('composer.json', 'composer.lock') }}
+        restore-keys: phpunit-${{ runner.os }}-php${{ steps.php.outputs.version }}-
+
+    # $ARGS and $COVERAGE are unquoted, as each holds several arguments
+    - name: Run PHPUnit tests
+      shell: bash
+      env:
+        ARGS: ${{ inputs.args }}
+        COVERAGE: ${{ steps.php.outputs.coverage == 'true' && format('--coverage-clover {0}/clover.xml', runner.temp) || '' }}
+      run: composer run test -- $ARGS $COVERAGE
+
+    # Codecov finds the commit of a pull request through the parents
+    # of its merge commit, so the checkout needs `fetch-depth: 2`
+    - name: Upload coverage results to Codecov
+      if: steps.php.outputs.coverage == 'true' && inputs.codecov-token != ''
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      with:
+        token: ${{ inputs.codecov-token }}
+        fail_ci_if_error: true
+        files: ${{ runner.temp }}/clover.xml
+        disable_search: true
+        flags: ${{ inputs.codecov-flags }}
+        env_vars: PHP
+      env:
+        PHP: ${{ steps.php.outputs.version }}

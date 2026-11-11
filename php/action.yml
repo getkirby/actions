@@ -1,0 +1,128 @@
+name: PHP
+description: Sets up PHP with cached extensions, cpx and the Composer dependencies
+
+inputs:
+  version:
+    description: PHP version, defaults to the lowest that composer.json allows
+    default: ""
+  extensions:
+    description: PHP extensions, e.g. "mbstring, gd"
+    default: ""
+  ini:
+    description: php.ini values, e.g. "apc.enable_cli=1"
+    default: ""
+  coverage:
+    description: Coverage driver (none, pcov or xdebug)
+    default: none
+  tools:
+    description: Tools for shivammathur/setup-php, e.g. "composer-normalize:2.54.0"
+    default: ""
+  dependencies:
+    description: How to install the Composer dependencies (locked, latest, lowest or none)
+    default: locked
+
+runs:
+  using: composite
+  steps:
+    # runs on the runner's own PHP, before setup-php
+    - name: Find the lowest PHP version
+      id: versions
+      if: inputs.version == ''
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/semver"
+        composer require --working-dir="$RUNNER_TEMP/semver" --no-interaction --no-progress --quiet composer/semver:3.5.2
+        php "$GITHUB_ACTION_PATH/../php-versions/versions.php"
+
+    - name: Find the PHP version
+      id: php
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version || steps.versions.outputs.lowest }}
+      run: echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Setup PHP cache environment
+      id: extensions
+      if: inputs.extensions != ''
+      uses: shivammathur/cache-extensions@695b1b465eba861efe67cbbc31252c27f5ed253d # 1.15.11
+      with:
+        php-version: ${{ steps.php.outputs.version }}
+        extensions: ${{ inputs.extensions }}
+        key: php-v1
+
+    - name: Cache PHP extensions
+      if: inputs.extensions != ''
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.extensions.outputs.dir }}
+        key: ${{ steps.extensions.outputs.key }}
+
+    - name: Setup PHP environment
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+      with:
+        php-version: ${{ steps.php.outputs.version }}
+        extensions: ${{ inputs.extensions }}
+        ini-values: ${{ inputs.ini }}
+        coverage: ${{ inputs.coverage }}
+        tools: ${{ inputs.tools }}
+
+    - name: Setup problem matchers
+      shell: bash
+      run: |
+        echo "::add-matcher::${{ runner.tool_cache }}/php.json"
+        echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
+
+    - name: Cache cpx
+      id: cpx
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.composer/vendor
+        key: cpx-2.1.0-${{ runner.os }}
+
+    - name: Install cpx
+      if: steps.cpx.outputs.cache-hit != 'true'
+      shell: bash
+      run: composer global require --no-interaction --no-progress cpx/cpx:2.1.0
+
+    # created upfront, so that saving the cache doesn't warn
+    # when none of the composer scripts ran a tool through cpx
+    - name: Ensure that the cpx tools dir exists
+      shell: bash
+      run: mkdir -p ~/.cpx
+
+    # the composer scripts pin the tool versions, so composer.json keys the cache
+    - name: Cache cpx tools
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cpx
+        key: cpx-tools-${{ runner.os }}-php${{ steps.php.outputs.version }}-${{ hashFiles('composer.json') }}
+        restore-keys: cpx-tools-${{ runner.os }}-php${{ steps.php.outputs.version }}-
+
+    - name: Get the Composer cache dir
+      id: composer
+      if: inputs.dependencies != 'none'
+      shell: bash
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Composer packages
+      if: inputs.dependencies != 'none'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.composer.outputs.dir }}
+        key: composer-${{ runner.os }}-php${{ steps.php.outputs.version }}-${{ inputs.dependencies }}-${{ hashFiles('composer.json', 'composer.lock') }}
+        restore-keys: composer-${{ runner.os }}-php${{ steps.php.outputs.version }}-
+
+    # an update skips the scripts, as post-update hooks
+    # tend to maintain the repository, e.g. download files
+    - name: Install Composer dependencies
+      if: inputs.dependencies != 'none'
+      shell: bash
+      env:
+        DEPENDENCIES: ${{ inputs.dependencies }}
+      run: |
+        case "$DEPENDENCIES" in
+          locked) composer install --no-interaction --no-progress ;;
+          latest) composer update --no-interaction --no-progress --no-scripts ;;
+          lowest) composer update --no-interaction --no-progress --no-scripts --prefer-lowest --prefer-stable ;;
+          *) echo "::error::dependencies must be locked, latest, lowest or none (got \"$DEPENDENCIES\")"; exit 1 ;;
+        esac

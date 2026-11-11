@@ -1,0 +1,46 @@
+name: PHP CS
+description: Checks the coding style with the `fix` script
+
+inputs:
+  suggestions:
+    description: "Post the changes as suggestions on pull requests (needs `pull-requests: write`)"
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # the token of pull requests from forks and Dependabot is read-only,
+    # so suggestions can't be posted there and the diff has to fail instead
+    - name: Find out whether to suggest the changes
+      id: suggest
+      shell: bash
+      env:
+        SUGGEST: >-
+          ${{ inputs.suggestions == 'true' &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]' }}
+      run: echo "suggest=$SUGGEST" >> "$GITHUB_OUTPUT"
+
+    # saved under a new key per run, as cache entries can't be updated
+    # and the fixer only uses a cache from its own version and config
+    - name: Cache PHP-CS-Fixer data
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .php-cs-fixer.cache
+        key: php-cs-fixer-${{ github.sha }}
+        restore-keys: php-cs-fixer-
+
+    # the fixer refuses PHP versions that it doesn't support yet
+    - name: Check for PHP coding style violations
+      shell: bash
+      env:
+        PHP_CS_FIXER_IGNORE_ENV: 1
+      run: composer run fix -- --diff ${{ steps.suggest.outputs.suggest != 'true' && '--dry-run' || '' }}
+
+    - name: Suggest the coding style fixes on the pull request
+      if: ${{ !cancelled() && steps.suggest.outputs.suggest == 'true' }}
+      uses: reviewdog/action-suggester@ac5ce6d94e35c00530447dc63c271e38e4fd36c6 # v1.26.3
+      with:
+        tool_name: PHP-CS-Fixer
+        fail_on_error: "true"

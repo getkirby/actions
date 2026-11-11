@@ -1,0 +1,50 @@
+name: Node
+description: Sets up Node and installs the npm dependencies
+
+inputs:
+  version:
+    description: Node version, defaults to the lowest that package.json allows
+    default: ""
+  working-directory:
+    description: Directory of the package.json
+    default: "."
+
+runs:
+  using: composite
+  steps:
+    # runs on the runner's own Node, before setup-node
+    - name: Find the lowest Node version
+      id: versions
+      if: inputs.version == ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        npm install --prefix "$RUNNER_TEMP/semver" --no-audit --no-fund --silent semver@7.8.5
+        node "$GITHUB_ACTION_PATH/../node-versions/versions.mjs"
+
+    - name: Find the Node version
+      id: node
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version || steps.versions.outputs.lowest }}
+      run: echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Setup Node environment
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: ${{ steps.node.outputs.version }}
+        package-manager-cache: false
+
+    # node_modules itself is cached, so that a cache hit skips `npm ci`
+    - name: Cache node_modules
+      id: node-modules
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ inputs.working-directory }}/node_modules
+        key: node-modules-${{ runner.os }}-node${{ steps.node.outputs.version }}-${{ hashFiles(format('{0}/package-lock.json', inputs.working-directory)) }}
+
+    - name: Install npm dependencies
+      if: steps.node-modules.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: npm ci --no-audit --no-fund

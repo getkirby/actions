@@ -1,0 +1,29 @@
+name: Node versions
+description: Finds the Node versions that package.json allows
+
+inputs:
+  working-directory:
+    description: Directory of the package.json
+    default: "."
+
+outputs:
+  versions:
+    description: The Node versions as JSON list, e.g. ["22","24"], for a matrix
+    value: ${{ steps.versions.outputs.versions }}
+  lowest:
+    description: The lowest of the Node versions
+    value: ${{ steps.versions.outputs.lowest }}
+
+runs:
+  using: composite
+  steps:
+    # runs on the runner's own Node, as it comes before the node action
+    - name: Install semver
+      shell: bash
+      run: npm install --prefix "$RUNNER_TEMP/semver" --no-audit --no-fund --silent semver@7.8.5
+
+    - name: Find the Node versions
+      id: versions
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: node "$GITHUB_ACTION_PATH/versions.mjs"

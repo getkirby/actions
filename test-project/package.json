@@ -1,0 +1,20 @@
+{
+	"name": "actions-test",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "mkdir -p dist",
+		"lint": "node --check year.js",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"picocolors": "^1.1.1"
+	},
+	"devDependencies": {
+		"@vitest/coverage-v8": "5.0.5",
+		"vitest": "5.0.5"
+	}
+}

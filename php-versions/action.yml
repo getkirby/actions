@@ -1,0 +1,25 @@
+name: PHP versions
+description: Finds the PHP versions that composer.json allows
+
+outputs:
+  versions:
+    description: The PHP versions as JSON list, e.g. ["8.3","8.4"], for a matrix
+    value: ${{ steps.versions.outputs.versions }}
+  lowest:
+    description: The lowest of the PHP versions
+    value: ${{ steps.versions.outputs.lowest }}
+
+runs:
+  using: composite
+  steps:
+    # runs on the runner's own PHP, as it comes before the php action
+    - name: Install composer/semver
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/semver"
+        composer require --working-dir="$RUNNER_TEMP/semver" --no-interaction --no-progress --quiet composer/semver:3.5.2
+
+    - name: Find the PHP versions
+      id: versions
+      shell: bash
+      run: php "$GITHUB_ACTION_PATH/versions.php"

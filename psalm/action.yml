@@ -1,0 +1,37 @@
+name: Psalm
+description: Analyzes the code statically with the `analyze:psalm` script
+
+inputs:
+  sarif:
+    description: "Upload the results to GitHub code scanning (needs `security-events: write`)"
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Find the PHP version
+      id: php
+      shell: bash
+      run: echo "version=$(php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;')" >> "$GITHUB_OUTPUT"
+
+    # keyed on the Psalm version in composer.json and without fallback keys,
+    # as Psalm keeps a full cache per version and never prunes old ones
+    - name: Cache Psalm analysis data
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/psalm
+        key: psalm-${{ runner.os }}-php${{ steps.php.outputs.version }}-${{ hashFiles('composer.json', 'composer.lock') }}
+
+    # Psalm takes the PHP version to analyze for from composer.json
+    - name: Statically analyze using Psalm
+      id: psalm
+      shell: bash
+      run: >
+        composer run analyze:psalm -- --output-format=github
+        ${{ inputs.sarif == 'true' && format('--report={0}/psalm.sarif --report-show-info=false', runner.temp) || '' }}
+
+    - name: Upload the results to GitHub code scanning
+      if: inputs.sarif == 'true' && steps.psalm.outcome == 'success'
+      uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+      with:
+        sarif_file: ${{ runner.temp }}/psalm.sarif

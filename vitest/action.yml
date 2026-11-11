@@ -1,0 +1,42 @@
+name: Vitest
+description: Runs the tests with the `test` script and uploads their coverage
+
+inputs:
+  working-directory:
+    description: Directory of the package.json
+    default: "."
+  codecov-token:
+    description: Codecov token, uploads the coverage if @vitest/coverage-v8 is installed
+    default: ""
+  codecov-flags:
+    description: Codecov flags, e.g. "frontend"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Find the coverage provider
+      id: coverage
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: echo "installed=$([ -d node_modules/@vitest/coverage-v8 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+    # $COVERAGE is unquoted, as it holds several arguments
+    - name: Run Vitest tests
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        COVERAGE: ${{ steps.coverage.outputs.installed == 'true' && format('--coverage.enabled --coverage.reporter=text-summary --coverage.reporter=clover --coverage.reportsDirectory={0}/coverage', runner.temp) || '' }}
+      run: npm run test -- $COVERAGE
+
+    # Codecov finds the commit of a pull request through the parents
+    # of its merge commit, so the checkout needs `fetch-depth: 2`
+    - name: Upload coverage results to Codecov
+      if: steps.coverage.outputs.installed == 'true' && inputs.codecov-token != ''
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+      with:
+        token: ${{ inputs.codecov-token }}
+        fail_ci_if_error: true
+        files: ${{ runner.temp }}/coverage/clover.xml
+        disable_search: true
+        flags: ${{ inputs.codecov-flags }}
