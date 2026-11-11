@@ -158,7 +158,7 @@ Finds the Node versions that `engines.node` in `package.json` allows, with the r
 
 ### php
 
-Sets up PHP with cached extensions, [cpx](https://github.com/RedExplosion/cpx) for the tools in the composer scripts, and the Composer dependencies.
+Sets up PHP with cached extensions, [cpx](https://github.com/laravel/cpx) for the tools in the composer scripts, and the Composer dependencies.
 
 | Input          | Default  | Purpose                                                                                            |
 | -------------- | -------- | -------------------------------------------------------------------------------------------------- |
