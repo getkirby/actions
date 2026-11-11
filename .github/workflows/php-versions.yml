@@ -1,0 +1,44 @@
+name: PHP versions
+
+# Finds the PHP versions that composer.json allows, as a job
+# that a matrix and the jobs needing the lowest version wait for
+
+on:
+  workflow_call:
+    outputs:
+      versions:
+        description: The PHP versions as JSON list, e.g. ["8.3","8.4"]
+        value: ${{ jobs.versions.outputs.versions }}
+      lowest:
+        description: The lowest of the PHP versions
+        value: ${{ jobs.versions.outputs.lowest }}
+
+jobs:
+  versions:
+    name: PHP versions
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      versions: ${{ steps.versions.outputs.versions }}
+      lowest: ${{ steps.versions.outputs.lowest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # the actions from the same commit as this workflow,
+      # inside .git, where the project's tools don't look
+      - name: Checkout getkirby/actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .git/getkirby-actions
+          persist-credentials: false
+
+      - name: Find the PHP versions
+        id: versions
+        uses: ./.git/getkirby-actions/php-versions

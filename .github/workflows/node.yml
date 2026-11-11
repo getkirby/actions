@@ -1,0 +1,94 @@
+name: Node
+
+# Lints, checks the code style and types, tests and builds the JavaScript
+# of a project; each step only runs if the project has its npm script
+
+on:
+  workflow_call:
+    inputs:
+      codecov-flags:
+        description: Codecov flags, e.g. "frontend"
+        type: string
+        default: ""
+      upstream:
+        description: Only run in this original repository and in forks outside its owner, e.g. "getkirby/kirby"
+        type: string
+        default: ""
+      working-directory:
+        description: Directory of the package.json
+        type: string
+        default: "."
+    secrets:
+      CODECOV_TOKEN:
+        description: Uploads the test coverage to Codecov
+        required: false
+
+jobs:
+  node:
+    name: Node
+    # with an upstream given, not in other repositories of its owner,
+    # like private copies, but still in forks outside it and manual runs
+    if: >-
+      inputs.upstream == '' ||
+      inputs.upstream == github.repository ||
+      !startsWith(inputs.upstream, format('{0}/', github.repository_owner)) ||
+      github.event_name == 'workflow_dispatch'
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      # the settings of the checkout action, which can't be
+      # used before the actions themselves are checked out
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # the actions from the same commit as this workflow,
+      # inside .git, where the project's tools don't look
+      - name: Checkout getkirby/actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .git/getkirby-actions
+          persist-credentials: false
+
+      - name: Setup Node
+        id: node
+        uses: ./.git/getkirby-actions/node
+        with:
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Find the npm scripts
+        id: scripts
+        run: echo "scripts=$(jq --compact-output '.scripts // {} | keys' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Lint JavaScript
+        if: ${{ !cancelled() && steps.node.outcome == 'success' && contains(fromJSON(steps.scripts.outputs.scripts), 'lint') }}
+        run: npm run lint
+
+      - name: Check JavaScript code style
+        if: ${{ !cancelled() && steps.node.outcome == 'success' && contains(fromJSON(steps.scripts.outputs.scripts), 'format') }}
+        run: npm run format
+
+      - name: Check the types
+        if: ${{ !cancelled() && steps.node.outcome == 'success' && contains(fromJSON(steps.scripts.outputs.scripts), 'types') }}
+        run: npm run types
+
+      - name: Run JavaScript unit tests
+        if: ${{ !cancelled() && steps.node.outcome == 'success' && contains(fromJSON(steps.scripts.outputs.scripts), 'test') }}
+        uses: ./.git/getkirby-actions/vitest
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          codecov-flags: ${{ inputs.codecov-flags }}
+
+      - name: Build
+        if: ${{ !cancelled() && steps.node.outcome == 'success' && contains(fromJSON(steps.scripts.outputs.scripts), 'build') }}
+        run: npm run build

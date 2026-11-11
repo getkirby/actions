@@ -1,10 +1,23 @@
 # Kirby GitHub Actions
 
-GitHub Actions for the CI of Kirby's core, libraries and plugins.
+Reusable workflows and GitHub Actions for the CI of Kirby's core, libraries and plugins.
 
 ## Usage
 
-Each action is a step, in one job or spread over several:
+The whole CI of a project:
+
+```yaml
+jobs:
+  php:
+    uses: getkirby/actions/.github/workflows/php.yml@<sha> # <version>
+    secrets: inherit
+
+  node:
+    uses: getkirby/actions/.github/workflows/node.yml@<sha> # <version>
+    secrets: inherit
+```
+
+Or the actions as single steps, in one job or spread over several:
 
 ```yaml
 jobs:
@@ -23,6 +36,66 @@ jobs:
 ```
 
 Pin each action to a commit with its version as comment.
+
+## Workflows
+
+### php.yml
+
+Tests with the phpunit action on every PHP version that `composer.json` allows, and with a `composer.lock` once more with the latest dependencies. Checks with the composer, psalm and php-cs actions on the lowest PHP version. Each step only runs if the project has its composer script, and a `CODECOV_TOKEN` secret uploads the coverage.
+
+| Input                | Default | Purpose                                                                                                    |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `apt`                |         | System packages for the tests, e.g. `imagemagick locales-all`                                              |
+| `codecov-flags`      |         | Codecov flags, e.g. `backend`                                                                              |
+| `composer-normalize` | `false` | Check that `composer.json` is normalized, with composer-normalize                                          |
+| `env`                |         | Environment variables for the tests, as `KEY=value` lines                                                  |
+| `extensions`         |         | PHP extensions, e.g. `mbstring, gd`                                                                        |
+| `ini`                |         | php.ini values for the tests, e.g. `apc.enable_cli=1`                                                      |
+| `phpunit-args`       |         | Arguments for the test script, e.g. `--display-skipped`                                                    |
+| `sarif`              | `false` | Upload the Psalm results to GitHub code scanning (the calling job needs `security-events: write`)          |
+| `services`           |         | Services for the tests, `redis` and/or `memcached`                                                         |
+| `suggestions`        | `false` | Post the PHP-CS-Fixer fixes as suggestions on pull requests (the calling job needs `pull-requests: write`) |
+| `upstream`           |         | Only run in this original repository and in forks outside its owner, e.g. `getkirby/kirby`                 |
+
+### node.yml
+
+Sets up Node with the node action and runs the npm scripts `lint`, `format`, `types`, `test` (with the vitest action) and `build`, each only if the project has it. A `CODECOV_TOKEN` secret uploads the coverage.
+
+```json
+"scripts": {
+	"build": "kirbyup src/index.js",
+	"format": "prettier --check .",
+	"format:fix": "prettier --write .",
+	"lint": "eslint . --max-warnings 0",
+	"lint:fix": "eslint . --fix",
+	"test": "vitest run",
+	"types": "tsc --noEmit"
+}
+```
+
+`lint`, `format` and `types` only check, their `:fix` variants write, so CI runs the same scripts as you do locally. `@vitest/coverage-v8` adds the coverage.
+
+| Input               | Default | Purpose                                                                                    |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `codecov-flags`     |         | Codecov flags, e.g. `frontend`                                                             |
+| `upstream`          |         | Only run in this original repository and in forks outside its owner, e.g. `getkirby/kirby` |
+| `working-directory` | `.`     | Directory of the `package.json`                                                            |
+
+### php-versions.yml
+
+Runs the php-versions action as a job, for a matrix over all PHP versions and the jobs that need the lowest one:
+
+```yaml
+jobs:
+  versions:
+    uses: getkirby/actions/.github/workflows/php-versions.yml@<sha> # <version>
+
+  tests:
+    needs: versions
+    strategy:
+      matrix:
+        php: ${{ fromJSON(needs.versions.outputs.versions) }}
+```
 
 ## Actions
 

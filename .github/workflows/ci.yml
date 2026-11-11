@@ -268,3 +268,9 @@ jobs:
         uses: ./php-cs
         with:
           suggestions: true
+
+  node-workflow:
+    name: node.yml
+    uses: ./.github/workflows/node.yml
+    with:
+      working-directory: test-project

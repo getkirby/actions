@@ -1,0 +1,209 @@
+name: PHP
+
+# Tests on every PHP version that composer.json allows, and with a composer.lock
+# once more with the latest dependencies, and analyzes on the lowest PHP version;
+# each step only runs if the project has its composer script
+
+on:
+  workflow_call:
+    inputs:
+      apt:
+        description: System packages for the tests, e.g. "imagemagick locales-all"
+        type: string
+        default: ""
+      codecov-flags:
+        description: Codecov flags, e.g. "backend"
+        type: string
+        default: ""
+      composer-normalize:
+        description: Check that composer.json is normalized, with composer-normalize
+        type: boolean
+        default: false
+      env:
+        description: Environment variables for the tests, as KEY=value lines
+        type: string
+        default: ""
+      extensions:
+        description: PHP extensions, e.g. "mbstring, gd"
+        type: string
+        default: ""
+      ini:
+        description: php.ini values for the tests, e.g. "apc.enable_cli=1"
+        type: string
+        default: ""
+      phpunit-args:
+        description: Arguments for the test script, e.g. "--display-skipped"
+        type: string
+        default: ""
+      sarif:
+        description: "Upload the Psalm results to GitHub code scanning (the calling job needs `security-events: write`)"
+        type: boolean
+        default: false
+      services:
+        description: Services for the tests, "redis" and/or "memcached"
+        type: string
+        default: ""
+      suggestions:
+        description: "Post the PHP-CS-Fixer fixes as suggestions on pull requests (the calling job needs `pull-requests: write`)"
+        type: boolean
+        default: false
+      upstream:
+        description: Only run in this original repository and in forks outside its owner, e.g. "getkirby/kirby"
+        type: string
+        default: ""
+    secrets:
+      CODECOV_TOKEN:
+        description: Uploads the test coverage to Codecov
+        required: false
+
+jobs:
+  project:
+    name: Read composer.json
+    # with an upstream given, not in other repositories of its owner,
+    # like private copies, but still in forks outside it and manual runs
+    if: >-
+      inputs.upstream == '' ||
+      inputs.upstream == github.repository ||
+      !startsWith(inputs.upstream, format('{0}/', github.repository_owner)) ||
+      github.event_name == 'workflow_dispatch'
+
+    runs-on: &runner ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      lowest: ${{ steps.versions.outputs.lowest }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      scripts: ${{ steps.scripts.outputs.scripts }}
+
+    steps:
+      # the settings of the checkout action, which can't be
+      # used before the actions themselves are checked out
+      - &checkout
+        name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # the actions from the same commit as this workflow,
+      # inside .git, where the project's tools don't look
+      - &actions
+        name: Checkout getkirby/actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .git/getkirby-actions
+          persist-credentials: false
+
+      - name: Find the PHP versions
+        id: versions
+        uses: ./.git/getkirby-actions/php-versions
+
+      # the locked versions are the lower bound of the dependencies,
+      # so a job with the latest ones tests their upper end
+      - name: Build the test matrix
+        id: matrix
+        env:
+          VERSIONS: ${{ steps.versions.outputs.versions }}
+          LOWEST: ${{ steps.versions.outputs.lowest }}
+        run: |
+          locked=$([ -f composer.lock ] && echo true || echo false)
+          echo "matrix=$(jq --compact-output --null-input \
+            --argjson versions "$VERSIONS" --arg lowest "$LOWEST" --argjson locked "$locked" \
+            '{php: $versions, dependencies: ["locked"], include: (if $locked then [{php: $lowest, dependencies: "latest"}] else [] end)}')" >> "$GITHUB_OUTPUT"
+
+      - name: Find the composer scripts
+        id: scripts
+        run: echo "scripts=$(jq --compact-output '.scripts // {} | keys' composer.json)" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: PHP ${{ matrix.php }}${{ matrix.dependencies == 'latest' && ' (latest dependencies)' || '' }}
+    needs: project
+    if: contains(fromJSON(needs.project.outputs.scripts), 'test')
+
+    runs-on: *runner
+    timeout-minutes: &timeout 10
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.project.outputs.matrix) }}
+
+    # a service with an empty image doesn't start
+    services:
+      redis:
+        image: ${{ contains(inputs.services, 'redis') && 'redis:7' || '' }}
+        ports:
+          - 6379:6379
+      memcached:
+        image: ${{ contains(inputs.services, 'memcached') && 'memcached:1' || '' }}
+        ports:
+          - 11211:11211
+
+    steps:
+      - *checkout
+
+      - *actions
+
+      - name: Set the environment variables
+        if: inputs.env != ''
+        env:
+          VARIABLES: ${{ inputs.env }}
+        run: echo "$VARIABLES" >> "$GITHUB_ENV"
+
+      - name: Install system packages
+        if: inputs.apt != ''
+        uses: ./.git/getkirby-actions/apt
+        with:
+          packages: ${{ inputs.apt }}
+
+      - name: Setup PHP
+        uses: ./.git/getkirby-actions/php
+        with:
+          version: ${{ matrix.php }}
+          extensions: ${{ inputs.extensions }}
+          ini: ${{ inputs.ini }}
+          dependencies: ${{ matrix.dependencies }}
+          # with a Codecov token, coverage once: on the lowest PHP version with the locked dependencies
+          coverage: ${{ secrets.CODECOV_TOKEN != '' && matrix.php == needs.project.outputs.lowest && matrix.dependencies == 'locked' && 'pcov' || 'none' }}
+
+      - name: Run PHP unit tests
+        uses: ./.git/getkirby-actions/phpunit
+        with:
+          args: ${{ inputs.phpunit-args }}
+          codecov-token: ${{ secrets.CODECOV_TOKEN }}
+          codecov-flags: ${{ inputs.codecov-flags }}
+
+  # on the php action's default, the lowest PHP version, as Psalm
+  # checks the built-in functions against the PHP that runs it
+  analysis:
+    name: Analysis
+    needs: project
+
+    runs-on: *runner
+    timeout-minutes: *timeout
+
+    steps:
+      - *checkout
+      - *actions
+
+      - name: Setup PHP
+        id: php
+        uses: ./.git/getkirby-actions/php
+        with:
+          extensions: ${{ inputs.extensions }}
+          tools: ${{ inputs.composer-normalize && 'composer-normalize:2.54.0' || '' }}
+
+      - name: Check Composer
+        if: ${{ !cancelled() && steps.php.outcome == 'success' && contains(fromJSON(needs.project.outputs.scripts), 'analyze:composer') }}
+        uses: ./.git/getkirby-actions/composer
+
+      - name: Analyze PHP
+        if: ${{ !cancelled() && steps.php.outcome == 'success' && contains(fromJSON(needs.project.outputs.scripts), 'analyze:psalm') }}
+        uses: ./.git/getkirby-actions/psalm
+        with:
+          sarif: ${{ inputs.sarif }}
+
+      - name: Check PHP code style
+        if: ${{ !cancelled() && steps.php.outcome == 'success' && contains(fromJSON(needs.project.outputs.scripts), 'fix') }}
+        uses: ./.git/getkirby-actions/php-cs
+        with:
+          suggestions: ${{ inputs.suggestions }}
