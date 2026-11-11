@@ -35,7 +35,7 @@ jobs:
         uses: getkirby/actions/psalm@<sha> # <version>
 ```
 
-Pin each action to a commit with its version as comment.
+Pin each action to a commit with its version as comment, see [Conventions](#conventions).
 
 ## Workflows
 
@@ -213,6 +213,71 @@ Runs `test` with Vitest. If `@vitest/coverage-v8` is installed, the tests write 
 | `working-directory` | `.`     | Directory of the `package.json`                    |
 | `codecov-token`     |         | Codecov token, e.g. `${{ secrets.CODECOV_TOKEN }}` |
 | `codecov-flags`     |         | Codecov flags, e.g. `frontend`                     |
+
+## Conventions
+
+Each workflow sets these itself:
+
+```yaml
+on:
+  # long-lived branches only, so a pull request doesn't run twice
+  # and restores the caches of its base branch
+  push:
+    branches: [main]
+  pull_request:
+
+# a new push cancels the runs it supersedes; the prefix is fixed,
+# as in a called workflow github.workflow is the caller's name
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# a job that needs more asks for it
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    # bumped on purpose like any pin; repeated values as anchors
+    runs-on: &runner ubuntu-24.04
+    # GitHub's default is six hours
+    timeout-minutes: &timeout 10
+    strategy:
+      # one failing PHP version doesn't cancel the others
+      fail-fast: false
+
+    steps:
+      # every action pinned to a commit, with its version as comment
+      - uses: getkirby/actions/checkout@<sha> # <version>
+
+  analysis:
+    runs-on: *runner
+    timeout-minutes: *timeout
+```
+
+And each repository:
+
+- **Versions:** PHP and Node versions only in `composer.json` (`require.php`) and `package.json` (`engines.node`).
+- **Dependencies:** caret ranges with the locked versions as lower bound, so a release stays installable when a dependency gets a security advisory. CI tests the locked and the latest versions.
+- **Tools:** exact versions in the composer scripts, run through cpx, so every repository formats and analyzes alike. composer-normalize, which cpx can't run, is the exception. npm tools are pinned by the committed `package-lock.json`.
+- **Dependabot:** optional, as a fallback for manual updates: quarterly, one pull request per ecosystem, and only versions that are two weeks old:
+  ```yaml
+  version: 2
+
+  updates:
+    - package-ecosystem: github-actions
+      directory: /
+      schedule:
+        interval: quarterly
+      cooldown:
+        default-days: 14
+      commit-message:
+        prefix: chore
+      groups:
+        actions:
+          patterns:
+            - "*"
+  ```
 
 ## Tests
 
