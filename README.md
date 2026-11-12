@@ -105,11 +105,11 @@ The PHP actions that check the code each run one composer script of the project:
 "scripts": {
 	"analyze:composer": [
 		"composer validate --strict --no-check-version --no-check-all",
-		"cpx icanhazstring/composer-unused:0.9.6 --no-progress"
+		"cpx icanhazstring/composer-unused:0.9.7 --no-progress"
 	],
-	"analyze:psalm": "cpx vimeo/psalm:6.16.1",
+	"analyze:psalm": "cpx vimeo/psalm:6.20.4",
 	"fix": "cpx getkirby/php-cs:0.2.1 fix",
-	"test": "cpx phpunit/phpunit:12.5.34"
+	"test": "cpx phpunit/phpunit:12.5.42"
 }
 ```
 
