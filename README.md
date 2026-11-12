@@ -1,6 +1,6 @@
 # Kirby GitHub Actions
 
-Reusable workflows and GitHub Actions for the CI of Kirby's core, libraries and plugins.
+Reusable workflows and GitHub Actions for the CI of Kirby's core, libraries and plugins, from PHP 8.3 on.
 
 ## Usage
 

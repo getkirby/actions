@@ -1,27 +1,30 @@
 <?php
 
-use Composer\Semver\VersionParser;
+use Kirby\Actions\Php;
 
 require getenv('RUNNER_TEMP') . '/semver/vendor/autoload.php';
+require __DIR__ . '/../lib/Php.php';
 
-// the PHP versions that can be tested, as far as composer.json allows them
-$candidates = ['8.2', '8.3', '8.4', '8.5', '8.6'];
-$require    = json_decode(file_get_contents('composer.json'), true)['require']['php'] ?? null;
+$require = json_decode(file_get_contents('composer.json'), true)['require']['php'] ?? null;
 
 if ($require === null) {
 	echo "::error::composer.json requires no PHP version\n";
 	exit(1);
 }
 
-$parser     = new VersionParser();
-$constraint = $parser->parseConstraints($require);
-$versions   = array_values(array_filter(
-	$candidates,
-	fn (string $version): bool => $constraint->matches($parser->parseConstraints('~' . $version . '.0'))
-));
+$php = new Php($require);
+
+// rather than testing fewer versions than composer.json promises
+if ($php->isSupported() === false) {
+	echo '::error::composer.json allows PHP versions below ' . Php::VERSIONS[0] . ", which getkirby/actions doesn't support\n";
+	exit(1);
+}
+
+// the PHP versions that can be tested, as far as composer.json allows them
+$versions = $php->versions();
 
 if ($versions === []) {
-	echo '::error::composer.json allows none of the PHP versions ' . implode(', ', $candidates) . "\n";
+	echo '::error::composer.json allows none of the PHP versions ' . implode(', ', Php::VERSIONS) . "\n";
 	exit(1);
 }
 

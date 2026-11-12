@@ -119,6 +119,18 @@ jobs:
           test "$VERSIONS" = '["8.3","8.4","8.5","8.6"]'
           test "$LOWEST" = 8.3
 
+      - name: Allow PHP 8.2 as well
+        run: jq '.require.php = "~8.2.0 || " + .require.php' composer.json > composer.tmp && mv composer.tmp composer.json
+
+      - name: Find the PHP versions with PHP 8.2
+        id: versions-82
+        continue-on-error: true
+        uses: ./php-versions
+
+      - name: Check that PHP 8.2 is refused
+        if: steps.versions-82.outcome != 'failure'
+        run: exit 1
+
   node-versions:
     name: node-versions
 
