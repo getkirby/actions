@@ -278,4 +278,4 @@ And each repository:
 
 ## Tests
 
-CI runs the actions and `kirby-actions outdated` on `test-project`.
+CI runs the actions and `kirby-actions outdated` on `test-project`, and php.yml on this repository's own PHP code.

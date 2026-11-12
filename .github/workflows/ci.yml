@@ -306,6 +306,11 @@ jobs:
         with:
           suggestions: true
 
+  # on this repository's own PHP code
+  php-workflow:
+    name: php.yml
+    uses: ./.github/workflows/php.yml
+
   node-workflow:
     name: node.yml
     uses: ./.github/workflows/node.yml

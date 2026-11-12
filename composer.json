@@ -16,5 +16,12 @@
 	"bin": ["bin/kirby-actions"],
 	"config": {
 		"sort-packages": true
+	},
+	"scripts": {
+		"analyze:composer": [
+			"composer validate --strict --no-check-version --no-check-all",
+			"cpx icanhazstring/composer-unused:0.9.7 --no-progress"
+		],
+		"fix": "cpx getkirby/php-cs:0.2.1 fix"
 	}
 }
