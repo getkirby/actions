@@ -260,23 +260,17 @@ And each repository:
 - **Versions:** PHP and Node versions only in `composer.json` (`require.php`) and `package.json` (`engines.node`).
 - **Dependencies:** caret ranges with the locked versions as lower bound, so a release stays installable when a dependency gets a security advisory. CI tests the locked and the latest versions.
 - **Tools:** exact versions in the composer scripts, run through cpx, so every repository formats and analyzes alike. composer-normalize, which cpx can't run, is the exception. npm tools are pinned by the committed `package-lock.json`.
-- **Dependabot:** optional, as a fallback for manual updates: quarterly, one pull request per ecosystem, and only versions that are two weeks old:
-  ```yaml
-  version: 2
+- **Updates:** by hand, to versions that are two weeks old. The pinned actions with [actions-up](https://github.com/azat-io/actions-up), npm with [npm-check-updates](https://github.com/raineorshine/npm-check-updates) and Composer with its own commands:
+  ```sh
+  # each commit with its version comment; with --recursive for the composite actions here
+  npx actions-up --min-age 14
 
-  updates:
-    - package-ecosystem: github-actions
-      directory: /
-      schedule:
-        interval: quarterly
-      cooldown:
-        default-days: 14
-      commit-message:
-        prefix: chore
-      groups:
-        actions:
-          patterns:
-            - "*"
+  # the chosen updates raise the lower bounds
+  npx npm-check-updates --interactive --cooldown 14
+
+  # list the updates, then raise the lower bounds to the updated versions
+  composer outdated --direct --cooldown-period="14 days"
+  composer update && composer bump
   ```
 
 ## Tests
