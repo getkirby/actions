@@ -1,0 +1,15 @@
+{
+	"name": "getkirby/actions",
+	"description": "Reusable workflows and GitHub Actions for the CI of Kirby's core, libraries and plugins",
+	"license": "MIT",
+	"type": "library",
+	"homepage": "https://github.com/getkirby/actions",
+	"require": {
+		"php": "^8.3",
+		"composer/semver": "^3.5.2"
+	},
+	"bin": ["bin/kirby-actions"],
+	"config": {
+		"sort-packages": true
+	}
+}

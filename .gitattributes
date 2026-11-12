@@ -1,0 +1,6 @@
+# the Composer package is only the tool, the actions come from GitHub
+/* export-ignore
+/bin -export-ignore
+/composer.json -export-ignore
+/LICENSE.md -export-ignore
+/README.md -export-ignore

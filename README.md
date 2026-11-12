@@ -260,19 +260,22 @@ And each repository:
 - **Versions:** PHP and Node versions only in `composer.json` (`require.php`) and `package.json` (`engines.node`).
 - **Dependencies:** caret ranges with the locked versions as lower bound, so a release stays installable when a dependency gets a security advisory. CI tests the locked and the latest versions.
 - **Tools:** exact versions in the composer scripts, run through cpx, so every repository formats and analyzes alike. composer-normalize, which cpx can't run, is the exception. npm tools are pinned by the committed `package-lock.json`.
-- **Updates:** by hand, to versions that are two weeks old. The pinned actions with [actions-up](https://github.com/azat-io/actions-up), npm with [npm-check-updates](https://github.com/raineorshine/npm-check-updates) and Composer with its own commands:
+- **Updates:** by hand, to versions that are at least two weeks old:
   ```sh
-  # each commit with its version comment; with --recursive for the composite actions here
+  # GitHub Actions, with --recursive in this repository
   npx actions-up --min-age 14
 
-  # the chosen updates raise the lower bounds
+  # npm
   npx npm-check-updates --interactive --cooldown 14
 
-  # list the updates, then raise the lower bounds to the updated versions
+  # Composer
   composer outdated --direct --cooldown-period="14 days"
   composer update && composer bump
+
+  # cpx tools, with --update to apply
+  cpx getkirby/actions outdated --min-age 14
   ```
 
 ## Tests
 
-CI runs the actions on `test-project`.
+CI runs the actions and `kirby-actions outdated` on `test-project`.

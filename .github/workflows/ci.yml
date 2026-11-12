@@ -142,6 +142,31 @@ jobs:
           test "$VERSIONS" = '["22","24","26"]'
           test "$LOWEST" = 22
 
+  outdated:
+    name: kirby-actions outdated
+
+    runs-on: *runner
+    timeout-minutes: *timeout
+
+    steps:
+      - *checkout
+
+      # with composer/semver from the root composer.json
+      - name: Setup PHP
+        uses: ./php
+
+      - name: Update the tools of the test project
+        working-directory: test-project
+        run: ../bin/kirby-actions outdated --update
+
+      # afterwards, only new majors may be left
+      - name: Check the tools of the test project
+        working-directory: test-project
+        run: |
+          ../bin/kirby-actions outdated | tee "$RUNNER_TEMP/outdated.txt"
+          grep -q "vimeo/psalm" "$RUNNER_TEMP/outdated.txt"
+          if grep -E "→ [0-9.]+($|,)" "$RUNNER_TEMP/outdated.txt"; then exit 1; fi
+
   node:
     name: node (Node ${{ matrix.version || 'from package.json' }}${{ matrix.directory != '.' && format(' in {0}/', matrix.directory) || '' }})
 
