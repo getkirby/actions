@@ -2,9 +2,8 @@
 <?php
 
 use Composer\Semver\Comparator;
-use Composer\Semver\Constraint\ConstraintInterface;
-use Composer\Semver\Semver;
-use Composer\Semver\VersionParser;
+use Kirby\Actions\Php;
+use Kirby\Actions\Tool;
 
 // the package's own vendor dir when run through cpx or from a clone,
 // the host project's when required as a dependency
@@ -22,7 +21,8 @@ const USAGE = <<<'TXT'
 	Usage: kirby-actions outdated [--update] [--major] [--min-age <days>]
 
 	Lists the tools that the composer scripts run through cpx and their newer
-	releases on Packagist that run on the lowest PHP version of the project.
+	releases on Packagist, which still run on every PHP version of the project
+	that the pinned release runs on.
 
 	  --update          raises each tool to its newest release of the same major
 	  --major           with --update, to its newest release, also of a new major
@@ -62,146 +62,72 @@ if (is_file('composer.json') === false) {
 
 $json     = file_get_contents('composer.json');
 $composer = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
-$parser   = new VersionParser();
+$versions = (new Php($composer['require']['php'] ?? '*'))->versions();
+$tools    = Tool::load($composer);
 
-// the tools have to run on the lowest PHP version, as CI analyzes on it,
-// and a pin of several versions on the PHP versions above it
-$range = $parser->parseConstraints($composer['require']['php'] ?? '*');
-preg_match('/^(\d+)\.(\d+)/', $range->getLowerBound()->getVersion(), $lowest);
-$lowest = $lowest[0] === '0.0' ? null : $lowest[0];
-
-// every `cpx vendor/name:1.2.3` in the scripts, also `"vendor/name:1.2.3||2.0.1"`
-$pins    = [];
-$scripts = $composer['scripts'] ?? [];
-
-array_walk_recursive($scripts, function (mixed $script) use (&$pins) {
-	preg_match_all('!cpx\s+"?([a-z0-9_.-]+/[a-z0-9_.-]+):([^\s"]+)!i', (string)$script, $matches, PREG_SET_ORDER);
-
-	foreach ($matches as [, $package, $versions]) {
-		$pins[$package . ':' . $versions] = [$package, $versions];
-	}
-});
-
-if ($pins === []) {
+if ($tools === []) {
 	fail('The composer scripts run no tools through cpx with a version, e.g. "cpx vendor/name:1.2.3"');
-}
-
-// the releases of a package, from Packagist's minified metadata,
-// in which each release only lists what changed from the one before
-function releases(string $package): array
-{
-	static $cache = [];
-
-	if (isset($cache[$package]) === true) {
-		return $cache[$package];
-	}
-
-	$context = stream_context_create(['http' => ['timeout' => 15, 'user_agent' => 'getkirby/actions']]);
-	$data    = @file_get_contents('https://repo.packagist.org/p2/' . strtolower($package) . '.json', false, $context);
-	$data !== false || throw new RuntimeException('Packagist has no ' . $package);
-
-	$releases = [];
-	$release  = [];
-
-	foreach (json_decode($data, true)['packages'][strtolower($package)] ?? [] as $changes) {
-		$release    = array_filter([...$release, ...$changes], fn ($value) => $value !== '__unset');
-		$releases[] = $release;
-	}
-
-	return $cache[$package] = $releases;
-}
-
-// the newest stable release that runs on the given PHP versions and is old enough,
-// only within the major of the pinned version if one is given
-function newest(VersionParser $parser, array $releases, ConstraintInterface $php, ?string $pinned, int $minAge): ?string
-{
-	$newest = null;
-	$cutoff = time() - $minAge * 86400;
-
-	foreach ($releases as $release) {
-		$version = ltrim($release['version'], 'v');
-
-		try {
-			if (
-				VersionParser::parseStability($version) !== 'stable' ||
-				($minAge > 0 && strtotime($release['time'] ?? 'now') > $cutoff) ||
-				($pinned !== null && Semver::satisfies($version, '^' . $pinned) === false) ||
-				$parser->parseConstraints($release['require']['php'] ?? '*')->matches($php) === false
-			) {
-				continue;
-			}
-		} catch (UnexpectedValueException) {
-			// old releases with a version or constraint Composer no longer reads
-			continue;
-		}
-
-		if ($newest === null || Comparator::greaterThan($version, $newest)) {
-			$newest = $version;
-		}
-	}
-
-	return $newest;
 }
 
 $updated = $json;
 $failed  = false;
 
-foreach ($pins as [$package, $token]) {
-	$versions = explode('||', $token);
-	$sorted   = $versions;
-	$targets  = [];
+foreach ($tools as $tool) {
+	$sorted  = $tool->versions();
+	$targets = [];
 	usort($sorted, fn ($a, $b) => Comparator::compare($a, '<', $b) ? -1 : 1);
 
 	try {
-		$releases = releases($package);
+		$tool->releases();
 	} catch (RuntimeException $e) {
-		printf("%-32s %-10s %s\n", $package, $token, $e->getMessage());
+		printf("%-32s %-10s %s\n", $tool->package, $tool->pin, $e->getMessage());
 		$failed = true;
 		continue;
 	}
 
-	foreach ($sorted as $i => $pinned) {
-		$label = $i === 0 ? $package : '';
+	foreach ($sorted as $i => $version) {
+		$label = $i === 0 ? $tool->package : '';
 
-		if (preg_match('/^v?\d+(\.\d+)*$/', $pinned) !== 1) {
-			printf("%-32s %-10s not an exact version, update it by hand\n", $label, $pinned);
+		if (preg_match('/^v?\d+(\.\d+)*$/', $version) !== 1) {
+			printf("%-32s %-10s not an exact version, update it by hand\n", $label, $version);
 			continue;
 		}
 
-		// the lowest version of a pin for the lowest PHP version, the others for any
-		$php = $i === 0 && $lowest !== null ? $parser->parseConstraints('~' . $lowest . '.0') : $range;
+		if ($tool->release($version) === null) {
+			printf("%-32s %-10s not a stable release on Packagist\n", $label, $version);
+			$failed = true;
+			continue;
+		}
 
-		$minor  = newest($parser, $releases, $php, $pinned, $options['--min-age']);
-		$latest = newest($parser, $releases, $php, null, $options['--min-age']);
+		$minor  = $tool->newest($version, $versions, minAge: $options['--min-age'])?->version;
+		$latest = $tool->newest($version, $versions, major: true, minAge: $options['--min-age'])?->version;
 		$newer  = [];
 
-		if ($minor !== null && Comparator::greaterThan($minor, $pinned) === true) {
+		if ($minor !== null && Comparator::greaterThan($minor, $version) === true) {
 			$newer[] = $minor;
 		}
 
-		if ($latest !== null && $latest !== $minor && Comparator::greaterThan($latest, $pinned) === true) {
+		if ($latest !== null && $latest !== $minor && Comparator::greaterThan($latest, $version) === true) {
 			$newer[] = $latest . ' (major)';
 		}
 
-		printf("%-32s %-10s %s\n", $label, $pinned, $newer === [] ? '✓' : '→ ' . implode(', ', $newer));
+		printf("%-32s %-10s %s\n", $label, $version, $newer === [] ? '✓' : '→ ' . implode(', ', $newer));
 
 		$target = $options['--major'] === true ? $latest : $minor;
 
-		if ($target !== null && Comparator::greaterThan($target, $pinned) === true) {
-			$targets[$pinned] = $target;
+		if ($target !== null && Comparator::greaterThan($target, $version) === true) {
+			$targets[$version] = $target;
 		}
 	}
 
 	// in the order of the pin, so only the versions change
 	if ($targets !== []) {
-		$new     = implode('||', array_map(fn ($version) => $targets[$version] ?? $version, $versions));
-		$updated = str_replace($package . ':' . $token, $package . ':' . $new, $updated);
+		$pin     = implode('||', array_map(fn ($version) => $targets[$version] ?? $version, $tool->versions()));
+		$updated = str_replace($tool->package . ':' . $tool->pin, $tool->package . ':' . $pin, $updated);
 	}
 }
 
-echo "\n" . ($lowest === null
-	? 'composer.json requires no PHP version, so the tools may need a newer one'
-	: 'For PHP ' . $lowest . ', the lowest that composer.json allows') . "\n";
+echo "\nFor PHP " . implode(', ', $versions) . ', which composer.json allows' . "\n";
 
 if ($options['--update'] === true) {
 	if ($updated === $json) {

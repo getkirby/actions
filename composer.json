@@ -8,6 +8,11 @@
 		"php": "^8.3",
 		"composer/semver": "^3.5.2"
 	},
+	"autoload": {
+		"psr-4": {
+			"Kirby\\Actions\\": "lib/"
+		}
+	},
 	"bin": ["bin/kirby-actions"],
 	"config": {
 		"sort-packages": true
