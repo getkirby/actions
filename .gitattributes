@@ -1,7 +1,7 @@
-# the Composer package is only the tool, the actions come from GitHub
-/* export-ignore
-/bin -export-ignore
-/lib -export-ignore
-/composer.json -export-ignore
-/LICENSE.md -export-ignore
-/README.md -export-ignore
+# GitHub downloads the actions as the same archive that is the Composer
+# package, so the archive only leaves out what neither of them needs
+/.gitattributes export-ignore
+/.github export-ignore
+/.gitignore export-ignore
+/.php-cs-fixer.dist.php export-ignore
+/test-project export-ignore

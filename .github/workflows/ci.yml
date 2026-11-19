@@ -55,6 +55,26 @@ jobs:
       - name: Check the packages
         run: figlet Kirby
 
+  # GitHub downloads the actions as the archive of the repository,
+  # which .gitattributes must leave them and lib/ in
+  archive:
+    name: archive
+
+    runs-on: *runner
+    timeout-minutes: *timeout
+
+    steps:
+      - *checkout
+
+      - name: Check the archive
+        run: |
+          git archive HEAD | tar -t > "$RUNNER_TEMP/archive.txt"
+          git ls-files -- '*/action.yml' | xargs -n1 dirname | xargs git ls-files -- lib > "$RUNNER_TEMP/needed.txt"
+          if grep -vxFf "$RUNNER_TEMP/archive.txt" "$RUNNER_TEMP/needed.txt"; then
+            echo "::error::The archive lacks the files above"
+            exit 1
+          fi
+
   php:
     name: php (PHP ${{ matrix.php || 'from composer.json' }}${{ matrix.dependencies != 'locked' && format(', {0} dependencies', matrix.dependencies) || '' }})
 
